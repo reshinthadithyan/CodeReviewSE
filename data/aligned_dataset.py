@@ -40,11 +40,11 @@ def get_accepted_answer(post):
             accepted_ans = reduce(lambda ans1, ans2 : ans1
                                                     if int(ans1['meta_data']['Score']) > int(ans2['meta_data']['Score'])
                                                     else ans2, post['answers'])
-            return accepted_ans['body']
+            return accepted_ans
     #print('acc_id', accepted_id)
     for answer in post['answers']:
         if answer['meta_data']['Id'] == accepted_id:
-            return answer['body']
+            return answer
 
 def get_lcs(body, accepted_answer):
     s = SequenceMatcher(None, body, accepted_answer)
@@ -214,7 +214,7 @@ def exp():
     posts = list(data.values())
     post = posts[4500]
     body = post['body']
-    accepted_answer = get_accepted_answer(post)
+    accepted_answer_tot = get_accepted_answer(post)
 
 
     log(body)
@@ -326,8 +326,11 @@ saved_data = []
 for i, post in tqdm(enumerate(posts),total=len(keys)):
     body = post['body']
     question_key  = keys[i] # To hash a common question_id universally.
+
     try:
-        accepted_answer = get_accepted_answer(post)
+        accepted_answer_dict = get_accepted_answer(post)
+        accepted_answer = accepted_answer_dict["body"]
+        accepted_answer_score = accepted_answer_dict["meta_data"]["Score"]
     except TypeError:
         continue
     if accepted_answer is None: 
@@ -475,7 +478,7 @@ for i, post in tqdm(enumerate(posts),total=len(keys)):
                     log("POST")
                     log(al.post_blocks)
 
-with open("aligned_data.json", 'w') as f:
+with open("aligned_data_with_score.json", 'w') as f:
     json.dump(saved_data, f)
 
 
