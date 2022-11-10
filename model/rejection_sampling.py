@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--code_gen_model_name_or_path", type=str, default="Salesforce/codegen-350M-mono")
     parser.add_argument("--generation_tokenizer_name_or_path", type=str, default="Salesforce/codegen-350M-mono")
-    parser.add_argument("--ce_name_or_path", type=str, default="CarperAI/carptriever-1")
+    parser.add_argument("--ce_name_or_path", type=str, default="model_ckpt/cross_encoder_final_ckpt")
     parser.add_argument("--ce_tokenizer_name_or_path", type=str, default="CarperAI/carptriever-1")
 
     args = parser.parse_args()
