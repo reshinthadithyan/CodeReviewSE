@@ -330,12 +330,13 @@ for i, post in tqdm(enumerate(posts),total=len(keys)):
     try:
         accepted_answer_dict = get_accepted_answer(post)
         accepted_answer = accepted_answer_dict["body"]
+        answer_id = accepted_answer_dict["meta_data"]["Id"]
         accepted_answer_score = accepted_answer_dict["meta_data"]["Score"]
+
     except TypeError:
         continue
     if accepted_answer is None: 
         continue
-
     num_posts += 1
 
     in_para = False
@@ -463,6 +464,8 @@ for i, post in tqdm(enumerate(posts),total=len(keys)):
                     'mid_blocks': [mid_block.text for mid_block in al.mid_blocks],
                     'post_blocks': [post_block.text for post_block in al.post_blocks],
                     'question_id' : question_key,
+                    'answer_score': accepted_answer_score,
+                    'answer_id' : answer_id
                     # 'post_body' : body
                 }
 
@@ -478,13 +481,14 @@ for i, post in tqdm(enumerate(posts),total=len(keys)):
                     log("POST")
                     log(al.post_blocks)
 
-with open("aligned_data_with_score.json", 'w') as f:
-    json.dump(saved_data, f)
+with open("dataset/aligned_data_with_score_and_key.json", 'w') as f:
+    json.dump(saved_data, f,indent=2)
 
 
 statistics['samples_with_answers'] = num_posts
 statistics['avg_num_matches'] = num_matches / statistics['samples_with_answers']
 statistics['avg_match_len'] = cum_match_len / num_matches
 statistics['num_matches'] = num_matches
+statistics['length'] = len(saved_data)
 statistics['avg_match_score'] = cum_score / num_matches
 print(json.dumps(statistics, indent=2))
