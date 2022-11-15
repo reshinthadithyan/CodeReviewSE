@@ -6,6 +6,7 @@ import torch
 from tqdm import tqdm
 from model.cross_encoder_utils.model import CrossEncoder
 from transformers import AutoTokenizer
+import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ if __name__ == "__main__":
         reward_dataset = RewardDataset(review_dict_path=args.cleaned_dataset_path,aligned_dataset_path=args.aligned_dataset_path)
         dataset = reward_dataset.load_datapoints()
 
-        ce_model = CrossEncoder(args.config_path).load_state_dict(torch.load(args.ce_model_path))
+        ce_model = CrossEncoder(args.config_path).load_state_dict(torch.load(os.path.join(args.ce_model_path,"ce_model.pt")))
         ce_tokenizer = AutoTokenizer.from_pretrained(args.ce_model_path)
 
 
