@@ -2,8 +2,10 @@ import trlx
 import argparse
 import json
 import logging
+import torch
 from tqdm import tqdm
-
+from model.cross_encoder_utils.model import CrossEncoder
+from transformers import AutoTokenizer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,8 @@ logger = logging.getLogger(__name__)
 #     "answer_score": "10",
 #     "answer_id": "30"
 #   },
+
+
 MAX_LEN = 512 #Dummy Context length
 IND_LEN_BLOCKS = int(MAX_LEN/5) #Equally split the 512 tokens between the 4 blocks and question.
 def process_aligned_dataset(example):
@@ -57,16 +61,17 @@ def augment_json(path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="TRLX")
-    parser.add_argument("--config_path",type=str,default="model/trlx_utils/trlx_train_config.yml")
-    parser.add_argument("--experiment", type=str, default="value", help="value | crossencoder")
+    parser.add_argument("--experiment", type=str, default="crossencoder", help="value | crossencoder") #
     parser.add_argument("--aligned_dataset_path",type=str,default="dataset/aligned_data_with_score_and_key.json")
     parser.add_argument("--cleaned_dataset_path",type=str,default="dataset/CodeReviewSE_CrossEncoder.json")
+    #
+    parser.add_argument("--trlx_config_path",type=str,default="model/trlx_utils/trlx_train_config.yml") #Path to the trlx config file.
+    parser.add_argument("--base_model_path",type=str) #finetuned codegen model to generate.
+    parser.add_argument("--ce_model_path",type=str) #The CE_Model to be used in reward fn.
 
     args = parser.parse_args()
 
-    if args.experiment == "value":
-        #Use reward value from answer score.
-
+    if args.experiment == "crossencoder":
         class RewardDataset:
             def __init__(self,review_dict_path:str,aligned_dataset_path:str):
                 self.dataset = json.load(open(review_dict_path,"r"))
@@ -82,11 +87,27 @@ if __name__ == "__main__":
                     question_id = datapoint["question_id"]
                     post = self.get_question_body(question_id)
                     processed_aligned = process_aligned_dataset(datapoint)
-                    print(processed_aligned)
-                    print(post)
-                    break
+                    yield processed_aligned,post["body"],datapoint["answer_score"] #post["boyd"] is the question text(input to the model)
 
 
         augment_json(args.cleaned_dataset_path)
         reward_dataset = RewardDataset(review_dict_path=args.cleaned_dataset_path,aligned_dataset_path=args.aligned_dataset_path)
-        reward_dataset.load_datapoints()
+        dataset = reward_dataset.load_datapoints()
+
+        ce_model = CrossEncoder(args.config_path).load_state_dict(torch.load(args.ce_model_path))
+        ce_tokenizer = AutoTokenizer.from_pretrained(args.ce_model_path)
+
+
+        def reward_fn(question,answer):
+            
+            return ce_model(ce_tokenizer("[QUESTIONSTART]"+question+"[ANSWERSTART]"+answer)) #returns a floating value
+
+    trl_config = trlx.TRLConfig.load_yaml("config/trlx_ppo_config.yml")
+
+    model = trlx.train(
+        args.base_model_path,
+        reward_fn=reward_fn,
+        prompts=dataset,
+        config=trl_config
+    )
+    #save the model...  
