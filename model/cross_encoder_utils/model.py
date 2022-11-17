@@ -70,8 +70,28 @@ def preprocess_ce_data(datapoint):
     output = datapoint["norm_score"]
     return prompt_string, [output]
 
+
+def preproc_aligned_dataset_critique(item):
+    pre = '\n'.join([text['text'] for text in item['pre_blocks']])
+    post = '\n'.join([text['text'] for text in item['post_blocks']])
+    mid_text = '\n'.join([text['text'] for text in item['mid_blocks']])
+    critique_data = f"[QUESTIONSTART]{item['sub_text']}[ANSWERSTART]{pre}\n{mid_text}\n{post}" if mid_text.strip() else f"[QUESTIONSTART]{item['sub_text']}[ANSWERSTART]{pre}\n{post}"
+    output = item["answer_score"] / item["max_score"]
+    return critique_data,output
+
+def preproc_aligned_dataset_improved_code(item):
+    pre = '\n'.join([text['text'] for text in item['pre_blocks']])
+    post = '\n'.join([text['text'] for text in item['post_blocks']])
+    mid_text = '\n'.join([text['text'] for text in item['mid_blocks']])
+    improved_data = f"[QUESTIONSTART]{item['sub_text']}{pre}\n{mid_text}\n{post}[ANSWERSTART]{mid_code}"
+    output = item["answer_score"] / item["max_score"]
+    return improved_data,output
+
+
 def squeeze_tree(tensor_data):
     return {k: tensor_data[k].squeeze(0) for k in tensor_data}
+
+
 class CEDataset(Dataset):
     def __init__(self,tokenizer,dataset_path:str,dataset_flag:str) -> None:
         self.dataset = json.load(open(dataset_path,"r"))

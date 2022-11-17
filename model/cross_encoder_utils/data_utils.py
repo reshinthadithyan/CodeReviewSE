@@ -41,7 +41,7 @@ def parse_html_block_for_code(html_block:str)->list[str]:
 
 
 class CodeReviewDataset(Dataset):
-    def __init__(self,dataset_path,config_str:str="Review"):
+    def __init__(self,dataset_path,aligned_dataset_path,config_str:str="Review"):
         """
         Class for Dataloading with Code Review Stack Exchange Dataset.
         args:
@@ -49,6 +49,7 @@ class CodeReviewDataset(Dataset):
             config_str (str): config file type. One of ['Review','Explain','Diff']
         """
         self.dataset = load_json_file(dataset_path)
+        self.aligned_dataset = load_json_file(aligned_dataset_path)
         self.dataset_keys = list(self.dataset.keys())
         self.dataset_list = [] #List of processed_datapoints
         self.pass_count = 0
@@ -60,6 +61,13 @@ class CodeReviewDataset(Dataset):
         return len(self.dataset)
 
 
+    def get_max_score(self,datapoint:dict):
+        score_list = []
+        for answer in datapoint["answers"]:
+            score = answer["meta_data"]["Score"]
+            score_list.append(int(score))
+        return max(score_list)
+
     def preprocess_ind(self,datapoint:dict):
         """
         Function to preprocess individual datapoint.
@@ -69,8 +77,10 @@ class CodeReviewDataset(Dataset):
         try:
             if datapoint["meta_data"]["AcceptedAnswerId"]:
                 accepted_id = datapoint["meta_data"]["AcceptedAnswerId"]
+                accepted_score = self.get_max_score(datapoint)
             else:
                 accepted_id = None
+                accepted_score = 1
             title = datapoint["meta_data"]["Title"]
             question_body = datapoint["body"] #Question body from the datapoint
             question_body_contexts = parse_html_to_context(question_body)        
@@ -135,7 +145,42 @@ class CodeReviewDataset(Dataset):
         
         with open(output_path, "w") as f:
             json.dump(self.dataset_list, f, indent=2)
+#   {
+#     "sub_text": "stringstream parseitemlink(itemlink);\n    uint32 hexform[ITEMLINKGROUPCOUNT",
+#     "pre_blocks": [
+#       "If you are using the standard library classes of the same name, I would give the following names the correct namespace qualifier: <code>std::string</code>, <code>std::stringstream</code>, <code>std::hex</code>.",
+#       "In C++, this works just as well, IMHO it's mildy more idiomatic."
+#     ],
+#     "mid_blocks": [
+#       "uint32 hexform[ITEMLINKGROUPCOUNT] = {};\n",
+#       "<code>ebx</code>, <code>edi</code>, <code>ecx</code>, <code>eax</code> are not good variable names, if you can give them more meaningful names, then do.",
+#       "    uint32 ecx = (hexform[i] + 1) * hexsum,\n           eax = ecx * hexform[i];\n",
+#       "Personally, I think this is clearer:",
+#       "    uint32 ecx = (hexform[i] + 1) * hexsum;\n    uint32 eax = ecx * hexform[i];\n"
+#     ],
+#     "post_blocks": [
+#       "The comment is really bad because it talks about <code>hexform[i]^2 + hexform[i] * hexsum</code> whereas <code>ecx</code> gets the value <code>hexform[i] * hexsum + hexsum</code> and <code>eax</code> gets the value <code>hexform[i]^2 * hexsum + hexform[i] * hexsum</code>. I think the comment needs a pair of parentheses if the code is doing what you meant.",
+#       "To be robust, you should check whether the parse worked."
+#     ],
+#     "question_id": "22",
+#     "answer_score": "10",
+#     "answer_id": "30",
+#     "max_score": 10
+#   }
 
+def preproc_aligned_dataset_critique(item):
+    pre = '\n'.join([text['text'] for text in item['pre_blocks']])
+    post = '\n'.join([text['text'] for text in item['post_blocks']])
+    mid_text = '\n'.join([text['text'] for text in item['mid_blocks']])
+    critique_data = f"[QUESTIONSTART]{item['sub_text']}[ANSWERSTART]{pre}\n{mid_text}\n{post}" if mid_text.strip() else f"[QUESTIONSTART]{item['sub_text']}[ANSWERSTART]{pre}\n{post}"
+    return critique_data
+
+def preproc_aligned_dataset_improved_code(item):
+    pre = '\n'.join([text['text'] for text in item['pre_blocks']])
+    post = '\n'.join([text['text'] for text in item['post_blocks']])
+    mid_text = '\n'.join([text['text'] for text in item['mid_blocks']])
+    improved_data = f"[QUESTIONSTART]{item['sub_text']}{pre}\n{mid_text}\n{post}[ANSWERSTART]{mid_code}"
+    return improved_data
 
 
 

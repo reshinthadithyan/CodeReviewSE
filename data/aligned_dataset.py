@@ -323,15 +323,24 @@ statistics = {"num_samples": len(data)}
 posts = list(data.values())
 keys = list(data.keys())
 saved_data = []
+
+def get_max_score(datapoint:dict):
+    score_list = []
+    for answer in datapoint["answers"]:
+        score = answer["meta_data"]["Score"]
+        score_list.append(int(score))
+    return max(score_list)
 for i, post in tqdm(enumerate(posts),total=len(keys)):
     body = post['body']
     question_key  = keys[i] # To hash a common question_id universally.
+
 
     try:
         accepted_answer_dict = get_accepted_answer(post)
         accepted_answer = accepted_answer_dict["body"]
         answer_id = accepted_answer_dict["meta_data"]["Id"]
         accepted_answer_score = accepted_answer_dict["meta_data"]["Score"]
+        max_score = get_max_score(post)
 
     except TypeError:
         continue
@@ -465,7 +474,8 @@ for i, post in tqdm(enumerate(posts),total=len(keys)):
                     'post_blocks': [post_block.text for post_block in al.post_blocks],
                     'question_id' : question_key,
                     'answer_score': accepted_answer_score,
-                    'answer_id' : answer_id
+                    'answer_id' : answer_id,
+                    'max_score' : max_score
                     # 'post_body' : body
                 }
 
