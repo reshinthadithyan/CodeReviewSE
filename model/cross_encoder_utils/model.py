@@ -72,20 +72,28 @@ def preprocess_ce_data(datapoint):
 
 
 def preproc_aligned_dataset_critique(item):
-    pre = '\n'.join([text['text'] for text in item['pre_blocks']])
-    post = '\n'.join([text['text'] for text in item['post_blocks']])
-    mid_text = '\n'.join([text['text'] for text in item['mid_blocks']])
+    pre = '\n'.join([text for text in item['pre_blocks']])
+    post = '\n'.join([text for text in item['post_blocks']])
+    mid_text = '\n'.join([text for text in item['mid_blocks']])
     critique_data = f"[QUESTIONSTART]{item['sub_text']}[ANSWERSTART]{pre}\n{mid_text}\n{post}" if mid_text.strip() else f"[QUESTIONSTART]{item['sub_text']}[ANSWERSTART]{pre}\n{post}"
-    output = item["answer_score"] / item["max_score"]
-    return critique_data,output
+    if int(item["max_score"]) == 0:
+        max_score = 1
+    else:
+        max_score = item["max_score"]
+    output = int(item["answer_score"]) / max_score
+    return critique_data,[output]
 
 def preproc_aligned_dataset_improved_code(item):
-    pre = '\n'.join([text['text'] for text in item['pre_blocks']])
-    post = '\n'.join([text['text'] for text in item['post_blocks']])
-    mid_text = '\n'.join([text['text'] for text in item['mid_blocks']])
+    pre = '\n'.join([text for text in item['pre_blocks']])
+    post = '\n'.join([text for text in item['post_blocks']])
+    mid_text = '\n'.join([text for text in item['mid_blocks']])
     improved_data = f"[QUESTIONSTART]{item['sub_text']}{pre}\n{mid_text}\n{post}[ANSWERSTART]{mid_code}"
-    output = item["answer_score"] / item["max_score"]
-    return improved_data,output
+    if int(item["max_score"]) == 0:
+        max_score = 1
+    else:
+        max_score = item["max_score"]
+    output = int(item["answer_score"]) / max_score
+    return improved_data,[output]
 
 
 def squeeze_tree(tensor_data):
@@ -107,8 +115,11 @@ class CEDataset(Dataset):
         datapoint = self.dataset[idx]
         if self.dataset_flag == "aligned":
             input,output = preprocess_function_aligned_data(datapoint)
-        elif self.dataset_flag == "ce":
-            input,output = preprocess_ce_data(datapoint)
+        elif self.dataset_flag == "ce_crit":
+            input,output = preproc_aligned_dataset_critique(datapoint)
+        elif self.dataset_flag == "ce_improved_code":
+            input,output = preproc_aligned_dataset_improved_code(datapoint)
+
         input = squeeze_tree(self.tokenizer(input, padding="max_length",
                          truncation=True, return_tensors='pt',return_token_type_ids=True))
         output = torch.Tensor(output)
@@ -144,21 +155,22 @@ class CrossEncoder(nn.Module):
 
 def train(args):
 
-
+    if args.if_wandb:
+        accelerator = Accelerator(log_with="wandb")
+        accelerator.init_trackers(project_name=f"crossencoder")
+    else:
+        accelerator = Accelerator()
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)    
     ce_model = CrossEncoder(args.model_name)
     config = AutoConfig.from_pretrained(args.model_name)
     logger.info(f"Successfully loaded the model to memory")
+    with accelerator.main_process_first():
+        ce_dataset = CEDataset(tokenizer=tokenizer,dataset_path=args.dataset_file_path,dataset_flag=args.dataset_flag)
+        train_len = int(len(ce_dataset)*0.9)
+        trainset, testset = random_split(ce_dataset, [train_len,len(ce_dataset)-train_len])
+        trainloader = DataLoader(trainset,args.batch_size,shuffle = True)
+        testloader = DataLoader(testset,args.batch_size,shuffle = True)
 
-    ce_dataset = CEDataset(tokenizer=tokenizer,dataset_path=args.dataset_file_path,dataset_flag=args.dataset_flag)
-    train_len = int(len(ce_dataset)*0.9)
-    trainset, testset = random_split(ce_dataset, [train_len,len(ce_dataset)-train_len])
-    trainloader = DataLoader(trainset,args.batch_size,shuffle = True)
-    testloader = DataLoader(testset,args.batch_size,shuffle = True)
-
-    # print(next(iter(trainloader))[0]["input_ids"].size())
-    # print(next(iter(trainloader))[1].size())
-    #Accelerate Init
 
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
@@ -182,11 +194,7 @@ def train(args):
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
     )
-    if args.if_wandb:
-        accelerator = Accelerator(log_with="wandb")
-        accelerator.init_trackers(project_name="crossencoder")
-    else:
-        accelerator = Accelerator()
+
     device = accelerator.device
     accelerator.print(f"Model : {args.model_name}")
 
@@ -268,21 +276,21 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(__name__)
     
-    parser.add_argument("--model_name", type=str, default="microsoft/codebert-base")
-    parser.add_argument("--dataset_file_path",type=str,default="dataset/CodeReviewSE_Trial.json")
-    parser.add_argument("--dataset_flag",type=str,default="ce")
+    parser.add_argument("--model_name", type=str, default="CarperAI/carptriever-1")
+    parser.add_argument("--dataset_file_path",type=str,default="dataset/aligned_data_with_score_and_key.json")
+    parser.add_argument("--dataset_flag",type=str,default="ce_crit")
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--num_epochs", type=int, default=3)
-    parser.add_argument("--if_wandb", type=bool, default=False)
+    parser.add_argument("--if_wandb", type=bool, default=True)
     
-    parser.add_argument("--warmup_steps", type=int, default=10)
+    parser.add_argument("--warmup_steps", type=int, default=1000)
 
     parser.add_argument('--lr', type=float, default=1e-5, help="learning rate (default: 1e-5)")
 
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1, help="gradient accumulation steps (default: 1)")
-    parser.add_argument("--output_dir",type=str,default="trained_models")
-    parser.add_argument("--batch_size",type=int,default=2)
+    parser.add_argument("--output_dir",type=str,default="trained_models/crit_ce")
+    parser.add_argument("--batch_size",type=int,default=8)
 
 
     args = parser.parse_args()
